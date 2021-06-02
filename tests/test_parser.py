@@ -20,5 +20,5 @@ def test_sample(example_data):
     config.host = "0.0.0.0"
     config.port = 8080
     origin, result = example_data
-    r = Habraparser(origin).process()
-    assert r == result.decode("utf-8")
+    r = Habraparser(origin).process().strip()
+    assert r == result.decode("utf-8").strip()
