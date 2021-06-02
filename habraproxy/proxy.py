@@ -21,7 +21,7 @@ class Habraproxy:
     async def _handler(self, request: Request):
         self._log.info(request.path_qs)
         url = urljoin(self._config.remote_url, request.path_qs)
-        session = ClientSession()
+        session = ClientSession(loop=self._loop)
         response = await session.get(url)
         try:
             body = await response.content.read()
@@ -43,9 +43,10 @@ class Habraproxy:
         return body, headers
 
     def start(self):
+        self._log.info(f'Habraproxy start at {self._config.local_url}')
         web.run_app(
             self._app,
-            host=self._config.host,
+            host=self._config.bind_host,
             port=self._config.port,
-            print=self._log.info,
+            print=lambda _: ...,
         )

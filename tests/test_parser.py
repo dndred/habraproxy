@@ -21,5 +21,4 @@ def test_sample(example_data):
     config.port = 8080
     origin, result = example_data
     r = Habraparser(origin).process()
-    print(r)
     assert r == result.decode("utf-8")

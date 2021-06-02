@@ -1,28 +1,8 @@
 import re
-
-from bs4 import BeautifulSoup
+import html5lib
+from html5lib import HTMLParser
 
 from .config import Config
-
-_text_tags = (
-    'title',
-    'div',
-    'p',
-    'a',
-    'h1',
-    'h2',
-    'h3',
-    'li',
-    'strong',
-    'span',
-    'button',
-    'blockquote',
-    'label',
-    'code',
-    'td',
-    'section',
-    'nav',
-)
 
 
 class Habraparser:
@@ -32,37 +12,44 @@ class Habraparser:
         self._body = body
 
     def process(self) -> str:
-        dom = BeautifulSoup(self._body.decode('utf-8'), 'html.parser')
-        dom = self._link_middleware(dom)
-        dom = self._text_middleware(dom)
-        body = dom.encode(formatter=None).decode('utf-8')
-        body = self._special_characters_fix(body)
-        return body
+        dom: HTMLParser = html5lib.parse(self._body.decode('utf-8'))
+        walker = html5lib.getTreeWalker("etree")
+        stream = walker(dom)
+        result = []
+        script_flag = False
+        for child in stream:
+            if child.get('type') == 'StartTag' and child.get('name') == 'script':
+                script_flag = True
+            if child.get('type') == 'EndTag' and child.get('name') == 'script':
+                script_flag = False
+            if not script_flag:
+                child = self._fix_text(child)
+                child = self._fix_links(child)
+            result.append(child)
+        s = html5lib.serializer.HTMLSerializer(omit_optional_tags=False)
+        return ''.join(s.serialize(result))
 
     @classmethod
-    def _link_middleware(cls, dom: BeautifulSoup) -> BeautifulSoup:
-        for child in dom.recursiveChildGenerator():
-            if 'a' == child.name:  # fix internal links
-                href: str = child.attrs.get('href', '')
-                if href:
-                    child.attrs['href'] = cls._replace_url(href)
-            if 'use' == child.name:  # for svg
-                href: str = child.attrs.get('xlink:href', '')
-                if href:
-                    href = cls._replace_url(href)
-                    child.attrs['xlink:href'] = href
-        return dom
+    def _fix_links(cls, child):
+        if child.get('type') == 'StartTag' and child.get('name') in ('a', 'use'):
+            data = child.get('data', {})
+            for key, value in data.items():
+                _, is_mark = key
+                if is_mark == 'href':
+                    href = data.get(key)
+                    if href:
+                        new_href = cls._replace_url(href)
+                        if new_href != href:
+                            data[key] = new_href
+        return child
 
     @classmethod
-    def _text_middleware(cls, dom: BeautifulSoup) -> BeautifulSoup:
-        for child in dom.recursiveChildGenerator():
-            if hasattr(child, 'text') and child.string:
-                if child.name in _text_tags:
-                    child.string = cls._add_tm_to_words(child.string)
-                title = child.attrs.get('title', '')
-                if title:
-                    child.attrs['title'] = cls._add_tm_to_words(title)
-        return dom
+    def _fix_text(cls, child):
+        if child.get('type') == 'Characters':
+            data = child.get('data', '')
+            if data:
+                child['data'] = cls._add_tm_to_words(data)
+        return child
 
     @classmethod
     def _replace_url(cls, href: str) -> str:
@@ -72,13 +59,13 @@ class Habraparser:
     def _add_tm_to_words(cls, text: str):
         result = []
         for word in text.split(' '):
-            strip_word = word.rstrip('.,!?:;\n')
-            if len(strip_word) == 6:
-                if strip_word.isalpha():
-                    word = word.replace(strip_word, strip_word + '™')
-            result.append(word)
+            slash_result = []
+            for slash_word in word.split('/'):
+                strip_word = slash_word.rstrip('.,!?:;"\'\n')
+                strip_word = strip_word.lstrip('"\'')
+                if len(strip_word) == 6:
+                    if strip_word.isalpha():
+                        slash_word = slash_word.replace(strip_word, strip_word + '™')
+                slash_result.append(slash_word)
+            result.append('/'.join(slash_result))
         return ' '.join(result)
-
-    @classmethod
-    def _special_characters_fix(cls, body: str) -> str:
-        return body.replace('&plus', '&plus;')
