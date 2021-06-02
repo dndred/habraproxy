@@ -1,0 +1,10 @@
+version: '2.1'
+
+services:
+  habraproxy:
+    build: ./
+    ports:
+      - ${PORT}:${PORT}
+    env_file:
+      - .env
+
